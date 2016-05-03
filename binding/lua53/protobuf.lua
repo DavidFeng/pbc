@@ -208,10 +208,10 @@ end
 
 ----------- encode ----------------
 
-local encode_type_cache = {}
+local encode_type_cache_s = {}
 
-local function encode_message(CObj, message_type, t)
-	local type = encode_type_cache[message_type]
+local function encode_message_strict(CObj, message_type, t)
+	local type = encode_type_cache_s[message_type]
 	for k,v in pairs(t) do
 		local func = type[k]
 		func(CObj, k , v)
@@ -229,9 +229,9 @@ function _writer:bool(k,v)
 	c._wmessage_int(self, k, v and 1 or 0)
 end
 
-function _writer:message(k, v , message_type)
+function _writer:message_strict(k, v , message_type)
 	local submessage = c._wmessage_message(self, k)
-	encode_message(submessage, message_type, v)
+	encode_message_strict(submessage, message_type, v)
 end
 
 function _writer:real_repeated(k,v)
@@ -252,10 +252,10 @@ function _writer:string_repeated(k,v)
 	end
 end
 
-function _writer:message_repeated(k,v, message_type)
+function _writer:message_repeated_strict(k,v, message_type)
 	for _,v in ipairs(v) do
 		local submessage = c._wmessage_message(self, k)
-		encode_message(submessage, message_type, v)
+		encode_message_strict(submessage, message_type, v)
 	end
 end
 
@@ -271,7 +271,7 @@ _writer[3] = function(msg) return _writer.bool end
 _writer[4] = function(msg) return _writer.string end
 _writer[5] = function(msg) return _writer.string end
 _writer[6] = function(msg)
-	local message = _writer.message
+	local message = _writer.message_strict
 	return	function(self,key , v)
 			return message(self, key, v, msg)
 		end
@@ -288,7 +288,7 @@ _writer[128+3] = function(msg) return _writer.bool_repeated end
 _writer[128+4] = function(msg) return _writer.string_repeated end
 _writer[128+5] = function(msg) return _writer.string_repeated end
 _writer[128+6] = function(msg)
-	local message = _writer.message_repeated
+	local message = _writer.message_repeated_strict
 	return	function(self,key, v)
 			return message(self, key, v, msg)
 		end
@@ -300,27 +300,27 @@ _writer[128+9] = _writer[128+5]
 _writer[128+10] = _writer[128+7]
 _writer[128+11] = _writer[128+7]
 
-local _encode_type_meta = {}
+local _encode_type_meta_s = {}
 
-function _encode_type_meta:__index(key)
+function _encode_type_meta_s.__index(self, key)
 	local t, msg = c._env_type(P, self._CType, key)
 	local func = assert(_writer[t],key)(msg)
 	self[key] = func
 	return func
 end
 
-setmetatable(encode_type_cache , {
+setmetatable(encode_type_cache_s , {
 	__index = function(self, key)
-		local v = setmetatable({ _CType = key } , _encode_type_meta)
+		local v = setmetatable({ _CType = key }, _encode_type_meta_s)
 		self[key] = v
 		return v
 	end
 })
 
-function M.encode( message, t , func , ...)
+function M.encode_strict( message, t , func , ...)
 	local encoder = c._wmessage_new(P, message)
 	assert(encoder ,  message)
-	encode_message(encoder, message, t)
+	encode_message_strict(encoder, message, t)
 	if func then
 		local buffer, len = c._wmessage_buffer(encoder)
 		local ret = func(buffer, len, ...)

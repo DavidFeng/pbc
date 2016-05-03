@@ -31,7 +31,7 @@ addressbook = {
 	}
 }
 
-code = protobuf.encode("tutorial.Person", addressbook)
+code = protobuf.encode_strict("tutorial.Person", addressbook)
 
 decode = protobuf.decode("tutorial.Person" , code)
 
