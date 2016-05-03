@@ -128,18 +128,19 @@ function _reader:int_repeated(key)
 end
 
 --[[
-#define PBC_INT 1
-#define PBC_REAL 2
-#define PBC_BOOL 3
-#define PBC_ENUM 4
-#define PBC_STRING 5
-#define PBC_MESSAGE 6
-#define PBC_FIXED64 7
-#define PBC_FIXED32 8
-#define PBC_BYTES 9
-#define PBC_INT64 10
-#define PBC_UINT 11
-#define PBC_UNKNOWN 12
+#define PBC_INT      1
+#define PBC_REAL     2
+#define PBC_BOOL     3
+#define PBC_ENUM     4
+#define PBC_STRING   5
+#define PBC_MESSAGE  6
+#define PBC_FIXED64  7
+#define PBC_FIXED32  8
+#define PBC_BYTES    9
+#define PBC_INT64    10
+#define PBC_UINT     11
+#define PBC_UNKNOWN  12
+#define PBC_MESSAGE2 15 -- non strict encode
 #define PBC_REPEATED 128
 ]]
 
@@ -218,6 +219,18 @@ local function encode_message_strict(CObj, message_type, t)
 	end
 end
 
+local encode_type_cache = {}
+
+local function encode_message(CObj, message_type, t)
+  local type = encode_type_cache[message_type]
+  for k,v in pairs(t) do
+    local func = type[k]
+    if func then
+      func(CObj, k , v)
+    end
+  end
+end
+
 local _writer = {
 	real = c._wmessage_real,
 	enum = c._wmessage_string,
@@ -232,6 +245,11 @@ end
 function _writer:message_strict(k, v , message_type)
 	local submessage = c._wmessage_message(self, k)
 	encode_message_strict(submessage, message_type, v)
+end
+
+function _writer:message(k, v , message_type)
+	local submessage = c._wmessage_message(self, k)
+	encode_message(submessage, message_type, v)
 end
 
 function _writer:real_repeated(k,v)
@@ -259,39 +277,63 @@ function _writer:message_repeated_strict(k,v, message_type)
 	end
 end
 
+function _writer:message_repeated(k,v, message_type)
+	for _,v in ipairs(v) do
+		local submessage = c._wmessage_message(self, k)
+		encode_message(submessage, message_type, v)
+	end
+end
+
 function _writer:int_repeated(k,v)
 	for _,v in ipairs(v) do
 		c._wmessage_int(self,k,v)
 	end
 end
 
-_writer[1] = function(msg) return _writer.int end
-_writer[2] = function(msg) return _writer.real end
-_writer[3] = function(msg) return _writer.bool end
-_writer[4] = function(msg) return _writer.string end
-_writer[5] = function(msg) return _writer.string end
+_writer[1] = function() return _writer.int end
+_writer[2] = function() return _writer.real end
+_writer[3] = function() return _writer.bool end
+_writer[4] = function() return _writer.string end
+_writer[5] = function() return _writer.string end
+
 _writer[6] = function(msg)
 	local message = _writer.message_strict
-	return	function(self,key , v)
-			return message(self, key, v, msg)
-		end
+	return function(self,key , v)
+		return message(self, key, v, msg)
+	end
 end
+
+_writer[15] = function(msg)
+	local message = _writer.message
+	return function(self, key, v)
+		return message(self, key, v, msg)
+	end
+end
+
 _writer[7] = _writer[1]
 _writer[8] = _writer[1]
 _writer[9] = _writer[5]
 _writer[10] = _writer[7]
 _writer[11] = _writer[7]
 
-_writer[128+1] = function(msg) return _writer.int_repeated end
-_writer[128+2] = function(msg) return _writer.real_repeated end
-_writer[128+3] = function(msg) return _writer.bool_repeated end
-_writer[128+4] = function(msg) return _writer.string_repeated end
-_writer[128+5] = function(msg) return _writer.string_repeated end
+_writer[128+1] = function() return _writer.int_repeated end
+_writer[128+2] = function() return _writer.real_repeated end
+_writer[128+3] = function() return _writer.bool_repeated end
+_writer[128+4] = function() return _writer.string_repeated end
+_writer[128+5] = function() return _writer.string_repeated end
+
 _writer[128+6] = function(msg)
 	local message = _writer.message_repeated_strict
 	return	function(self,key, v)
 			return message(self, key, v, msg)
 		end
+end
+
+_writer[128+15] = function(msg)
+	local message = _writer.message_repeated
+	return function(self,key, v)
+		return message(self, key, v, msg)
+	end
 end
 
 _writer[128+7] = _writer[128+1]
@@ -300,18 +342,46 @@ _writer[128+9] = _writer[128+5]
 _writer[128+10] = _writer[128+7]
 _writer[128+11] = _writer[128+7]
 
-local _encode_type_meta_s = {}
-
-function _encode_type_meta_s.__index(self, key)
-	local t, msg = c._env_type(P, self._CType, key)
-	local func = assert(_writer[t],key)(msg)
-	self[key] = func
-	return func
-end
+local _encode_type_meta_s = {
+  __index = function (self, key)
+    local t, msg = c._env_type(P, self._CType, key)
+    local func = assert(_writer[t],key)(msg)
+    self[key] = func
+    return func
+  end,
+}
 
 setmetatable(encode_type_cache_s , {
 	__index = function(self, key)
 		local v = setmetatable({ _CType = key }, _encode_type_meta_s)
+		self[key] = v
+		return v
+	end
+})
+
+local _encode_type_meta = {
+  __index = function (self, key)
+
+    local tt, msg = c._env_type(P, self._CType, key)
+
+    if tt == 6 or tt == 128 + 6 then
+      tt = tt + 15 - 6
+    end
+
+    local gw = _writer[tt]
+    if gw then
+      local func = gw(msg)
+      self[key] = func
+      return func
+    else
+      return nil
+    end
+  end,
+}
+
+setmetatable(encode_type_cache , {
+	__index = function(self, key)
+		local v = setmetatable({ _CType = key }, _encode_type_meta)
 		self[key] = v
 		return v
 	end
@@ -331,6 +401,15 @@ function M.encode_strict( message, t , func , ...)
 		c._wmessage_delete(encoder)
 		return s
 	end
+end
+
+function M.encode (message, t)
+	local encoder = c._wmessage_new(P, message)
+	assert(encoder, message)
+	encode_message(encoder, message, t)
+	local s = c._wmessage_buffer_string(encoder)
+	c._wmessage_delete(encoder)
+	return s
 end
 
 --------- unpack ----------

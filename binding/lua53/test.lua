@@ -1,4 +1,5 @@
 local protobuf = require "protobuf"
+local print = print
 
 addr = io.open("../../build/addressbook.pb","rb")
 buffer = addr:read "*a"
@@ -22,7 +23,7 @@ for _,v in ipairs(message) do
 	end
 end
 
-addressbook = {
+local addressbook = {
 	name = "Alice",
 	id = 12345,
 	phone = {
@@ -31,7 +32,23 @@ addressbook = {
 	}
 }
 
+local addressbook_2 = {
+	name = "Alice",
+	id = 12345,
+  non_exist = 2,
+	phone = {
+		{ number = "1301234567" },
+		{ go = 324, number = "1301234567" },
+		{ number = "87654321", type = "WORK" },
+	}
+}
+
 code = protobuf.encode_strict("tutorial.Person", addressbook)
+code = protobuf.encode("tutorial.Person", addressbook)
+
+local ok, err = pcall(protobuf.encode_strict, "tutorial.Person", addressbook_2)
+assert(ok == false)
+code = protobuf.encode("tutorial.Person", addressbook_2)
 
 decode = protobuf.decode("tutorial.Person" , code)
 
