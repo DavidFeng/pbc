@@ -62,7 +62,7 @@ function _reader:message(key, message_type)
     local v = {
       _CObj = rmessage,
       _CType = message_type,
-      _Parent = self,
+      _Parent = self, -- 保留对parent的引用，防止父对象先于子对象gc
     }
     return setmetatable( v , _R_meta )
   end
@@ -353,6 +353,7 @@ local _encode_type_meta_s = {
 
 setmetatable(encode_type_cache_s , {
   __index = function(self, key)
+    -- TODO 可以修改 key，不使用 保留字 _CType
     local v = setmetatable({ _CType = key }, _encode_type_meta_s)
     self[key] = v
     return v
