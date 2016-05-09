@@ -646,6 +646,8 @@ end
 -- @msg : {typename, buffer} with meta {index, pairs} to expand
 -- 这个表作为default table的子表表缓存起来继续使用，需要复制
 local function build_msg(msg)
+  if not msg._CType then return msg end
+
   local tti = assert(find_msg_info(msg._CType))
   for _, subfield in ipairs(tti.field) do
     local field_name = subfield.name

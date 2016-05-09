@@ -669,14 +669,17 @@ end
 -- @msg : {typename, buffer} with meta {index, pairs} to expand
 -- 这个表作为default table的子表表缓存起来继续使用，需要复制
 local function build_msg(msg)
-  local tti = assert(find_msg_info(msg._CType))
-  for _, subfield in ipairs(tti.field) do
-    local field_name = subfield.name
-    local value = msg[field_name]
-    if type(value) == 'table' then
-      msg[field_name] = copy_table({}, build_msg(value))
-    else
-      msg[field_name] = value
+  local ctype = msg._CType
+  if ctype then
+    local tti = assert(find_msg_info(ctype))
+    for _, subfield in ipairs(tti.field) do
+      local field_name = subfield.name
+      local value = msg[field_name]
+      if type(value) == 'table' then
+        msg[field_name] = copy_table({}, build_msg(value))
+      else
+        msg[field_name] = value
+      end
     end
   end
   return msg

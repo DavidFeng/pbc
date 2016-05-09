@@ -16,4 +16,6 @@ message B {
 
   optional BB b2 = 2;
   optional bool b3 = 3 [default = true];
+
+  repeated uint32 b4 = 4;
 }
