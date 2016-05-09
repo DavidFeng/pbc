@@ -1,3 +1,4 @@
+#!/usr/bin/env lua53
 local protobuf = require "protobuf"
 local print = print
 

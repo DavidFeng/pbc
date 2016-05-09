@@ -7,7 +7,7 @@ local assert = assert
 local pairs = pairs
 local ipairs = ipairs
 local string = string
-local print = print
+
 local io = io
 local tinsert = table.insert
 local rawget = rawget
@@ -34,13 +34,15 @@ function M.lasterror()
 end
 
 local decode_type_cache = {}
-local _R_meta = {}
 
-function _R_meta:__index(key)
-  local v = decode_type_cache[self._CType][key](self, key)
-  self[key] = v
-  return v
-end
+local _R_meta = {
+  __index = function (tbl, key)
+    local v = decode_type_cache[tbl._CType][key](tbl, key)
+    tbl[key] = v
+    return v
+  end,
+}
+
 
 local _reader = {}
 
@@ -60,11 +62,13 @@ function _reader:message(key, message_type)
   local rmessage = c._rmessage_message(self._CObj , key , 0)
   if rmessage then
     local v = {
+      -- TODO 去掉这个限制
       _CObj = rmessage,
       _CType = message_type,
-      _Parent = self, -- 保留对parent的引用，防止父对象先于子对象gc
+      _Parent = self, -- 保证对父对象的引用，防止父对象gc后
+      -- cobj指针无效
     }
-    return setmetatable( v , _R_meta )
+    return setmetatable(v , _R_meta)
   end
 end
 
@@ -353,7 +357,6 @@ local _encode_type_meta_s = {
 
 setmetatable(encode_type_cache_s , {
   __index = function(self, key)
-    -- TODO 可以修改 key，不使用 保留字 _CType
     local v = setmetatable({ _CType = key }, _encode_type_meta_s)
     self[key] = v
     return v
@@ -497,9 +500,10 @@ end
 
 --------------
 
-local default_cache = {}
-
 -- todo : clear default_cache, v._CObj
+-- 设置弱表引用即可 david feng Thu 19:19 May 05
+
+local default_cache = {}
 
 local function default_table(typename)
   local v = default_cache[typename]
@@ -563,14 +567,33 @@ local function set_default(typename, tbl)
   return setmetatable(tbl , default_table(typename))
 end
 
+M.default=set_default
+
+local top_level_msgs = {}
+
 function M.register(buffer)
   c._env_register(P, buffer)
+
+  local tp = 'google.protobuf.FileDescriptorSet'
+  local meta_info = M.decode(tp, buffer)
+  -- collect top level msg types
+  for _, v in ipairs(meta_info.file) do
+    for _, msg in ipairs(v.message_type) do
+      table.insert(top_level_msgs, msg)
+      local tp
+      if v.package ~= '' then
+        tp = v.package .. '.' .. msg.name
+      else
+        tp = msg.name
+      end
+      top_level_msgs[tp] = msg
+    end
+  end
 end
 
 function M.register_file(filename)
   local f = assert(io.open(filename , "rb"))
-  local buffer = f:read "*a"
-  c._env_register(P, buffer)
+  M.register(f:read "*a")
   f:close()
 end
 
@@ -594,6 +617,104 @@ function M.extract(tbl)
     end
 end
 
-M.default=set_default
+--- 查找类型信息
+-- upvalue : top_level_msgs list of top level message
+-- @string typename : top level 或嵌套的 message type名
+-- @return 类型信息
+local function find_msg_info(typename)
+  local _, _, bn, optdot, sn = typename:find('([^%.]+%.[^%.]+)(%.?)(.*)')
+  local tt = bn and top_level_msgs[bn]
+  if not tt then
+    _, _, bn, optdot, sn = typename:find('([^%.]+)(%.?)(.*)')
+    tt = bn and top_level_msgs[bn]
+  end
+
+  if tt then
+    if optdot == '' then
+      return tt
+    else
+      local next_type_name = sn:gmatch('([^%.]+)%.?')
+
+      local function go(stt, tv)
+        for _, v in ipairs(stt.nested_type) do
+          if v.name == tv then
+            tv = next_type_name()
+            if tv then
+              return go(v, tv)
+            else
+              return v
+            end
+          end
+        end
+      end
+
+      return go(tt, assert(next_type_name(), 'invalid input: ' .. typename))
+    end
+  end
+end
+
+-- TODO 修复保留字段名限制后，要更新此处
+local function copy_table(nt, ot)
+  for k, v in next, ot, nil do
+    if k ~= '_Parent' then
+      nt[k] = type(v) == 'table' and copy_table({}, v) or v
+    end
+  end
+  nt._CType = nil
+  nt._CObj = nil
+  return nt
+end
+
+
+-- @msg : {typename, buffer} with meta {index, pairs} to expand
+-- 这个表作为default table的子表表缓存起来继续使用，需要复制
+local function build_msg(msg)
+  local tti = assert(find_msg_info(msg._CType))
+  for _, subfield in ipairs(tti.field) do
+    local field_name = subfield.name
+    local value = msg[field_name]
+    if type(value) == 'table' then
+      msg[field_name] = copy_table({}, build_msg(value))
+    else
+      msg[field_name] = value
+    end
+  end
+  return msg
+end
+
+local function build(msg)
+  local info = assert(find_msg_info(msg._CType))
+  local msgmtidx = assert(getmetatable(msg)).__index
+  for _, field in ipairs(info.field) do
+    local field_name = field.name
+    local raw_value = rawget(msg, field_name)
+    if raw_value == nil then
+      local value = msg[field_name]
+      if type(value) == 'table' then
+        msg[field_name] = copy_table({}, build_msg(value))
+      else
+        msg[field_name] = value
+      end
+    else
+      if type(raw_value) == 'table' then
+        build_msg(raw_value)
+        -- 缓存默认值到 root msg的元表
+        msgmtidx[field_name] = getmetatable(raw_value).__index
+        setmetatable(raw_value, nil)
+      end
+    end
+  end
+  return setmetatable(msg, nil)
+end
+
+function M.decode_ex(typename, buffer, length)
+  local msg, err = M.decode(typename, buffer, length)
+  if msg then
+    return build(msg)
+  else
+    return false, err
+  end
+end
+
 
 return M
