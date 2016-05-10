@@ -642,23 +642,39 @@ local function copy_table(nt, ot)
   return nt
 end
 
+local expand_repeated_msg
 
 -- @msg : {typename, buffer} with meta {index, pairs} to expand
 -- 这个表作为default table的子表表缓存起来继续使用，需要复制
 local function build_msg(msg)
-  if not msg._CType then return msg end
-
-  local tti = assert(find_msg_info(msg._CType))
-  for _, subfield in ipairs(tti.field) do
-    local field_name = subfield.name
-    local value = msg[field_name]
-    if type(value) == 'table' then
-      msg[field_name] = copy_table({}, build_msg(value))
-    else
-      msg[field_name] = value
+  local ctype = msg._CType
+  if ctype then
+    local tti = assert(find_msg_info(msg._CType))
+    for _, subfield in ipairs(tti.field) do
+      local field_name = subfield.name
+      local value = msg[field_name]
+      if type(value) == 'table' then
+        msg[field_name] = copy_table({}, build_msg(value))
+      else
+        msg[field_name] = value
+      end
     end
+  else
+    expand_repeated_msg(msg)
   end
   return msg
+end
+
+function expand_repeated_msg(rm)
+  local le = rm[1]
+  if type(le) == 'table' then
+    if getmetatable(le) then
+      for _, v in ipairs(rm) do
+        build_msg(v)
+        setmetatable(v, nil)
+      end
+    end
+  end
 end
 
 local function build(msg)
@@ -676,10 +692,14 @@ local function build(msg)
       end
     else
       if type(raw_value) == 'table' then
-        build_msg(raw_value)
-        -- 缓存默认值到 root msg的元表
-        msgmtidx[field_name] = getmetatable(raw_value).__index
-        setmetatable(raw_value, nil)
+        local fmt = getmetatable(raw_value)
+        if fmt then
+          build_msg(raw_value)
+          msgmtidx[field_name] = getmetatable(raw_value).__index
+          setmetatable(raw_value, nil)
+        else
+          expand_repeated_msg(raw_value)
+        end
       end
     end
   end
