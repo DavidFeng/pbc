@@ -5,17 +5,34 @@ message A {
   optional uint32 a2 = 2 [default = 8];
 }
 
+message C {
+  repeated A c1 = 1;
+  repeated bool c2 = 2;
+  repeated uint32 c3 = 3;
+}
+
 message B {
   optional A b1 = 1;
 
   message BB {
-    optional float bb1 = 1;
+    optional float  bb1 = 1;
     optional double bb2 = 2 [default = 123.321];
     optional A      bb3 = 3;
   }
 
-  optional BB b2 = 2;
+  optional BB   b2 = 2;
   optional bool b3 = 3 [default = true];
 
-  repeated uint32 b4 = 4;
+  repeated A    b4 = 4;
+  repeated C    b5 = 5;
+
+  message BC {
+    optional A    bc1 = 1;
+    repeated BB   bc2 = 2;
+    repeated C    bc3 = 3;
+    repeated bool bc4 = 4;
+  }
+
+
+  repeated BC   b6 = 6;
 }
