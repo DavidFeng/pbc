@@ -1,8 +1,7 @@
 ## sf fork分支功能
 
 * 原encode改为encode_strict, 新encode可以支持不在proto方案中的key
-* 增加了decode_ex函数，可以从proto方案出解码出全部的值，buf中不存在的去
-默认值或空表
+* 增加了decode_ex函数，可以从proto方案出解码出全部的值，buf中不存在的取默认值或空表
 
 
 ## PBC
