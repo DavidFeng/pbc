@@ -8,7 +8,7 @@ extern "C" {
 }
 #endif
 
-#include <malloc.h>
+//#include <malloc.h>
 #include <alloca.h>
 
 #ifndef _MSC_VER
