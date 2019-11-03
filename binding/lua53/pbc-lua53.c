@@ -112,7 +112,7 @@ _rmessage_int(lua_State *L) {
 	return 1;
 }
 
-static int 
+static int
 _rmessage_real(lua_State *L) {
 	struct pbc_rmessage * m = (struct pbc_rmessage *)checkuserdata(L,1);
 	const char * key = luaL_checkstring(L,2);
@@ -301,7 +301,7 @@ static int
 _pattern_delete(lua_State *L) {
 	struct pbc_pattern * pat = (struct pbc_pattern *)lua_touserdata(L,1);
 	pbc_pattern_delete(pat);
-	
+
 	return 0;
 }
 
@@ -346,7 +346,7 @@ _push_value(lua_State *L, char * ptr, char type) {
 			lua_pushinteger(L,slice->len);
 			lua_rawseti(L,-2,2);
 			ptr += sizeof(struct pbc_slice);
-			break;			
+			break;
 		}
 	}
 	return ptr;
@@ -431,7 +431,7 @@ _pattern_unpack(lua_State *L) {
 		slice.buffer = lua_touserdata(L,4);
 		slice.len = luaL_checkinteger(L,5);
 	}
-	
+
 	char * temp = (char *)alloca(size);
 	int ret = pbc_pattern_unpack(pat, &slice, temp);
 	if (ret < 0) {
@@ -648,7 +648,7 @@ _pattern_size(lua_State *L) {
 	int size = 0;
 	for (i=0;i<sz;i++) {
 		switch(format[i]) {
-		case 'b': 
+		case 'b':
 		case 'i':
 			size += 4;
 			break;
@@ -714,7 +714,7 @@ push_value(lua_State *L, int type, const char * type_name, union pbc_value *v) {
 		lua_call(L, 2 , 1);
 		break;
 	case PBC_FIXED64:
-	case PBC_UINT: 
+	case PBC_UINT:
 	case PBC_INT64: {
 		uint64_t v64 = (uint64_t)(v->i.hi) << 32 | (uint64_t)(v->i.low);
 		lua_pushinteger(L,v64);
